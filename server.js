@@ -216,15 +216,17 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Excel file is empty' });
     }
 
-    // Get existing columns
-    const [existingCols] = await pool.query('SELECT column_name FROM table_columns');
-    const existingColNames = existingCols.map(c => c.column_name);
-    const baseColumns = ['student_id', 'name', 'class', 'section'];
-    const allExistingColumns = [...baseColumns, ...existingColNames];
+    // Get existing columns from students table directly
+    const [tableColumns] = await pool.query('SHOW COLUMNS FROM students');
+    const existingTableColumns = tableColumns.map(col => col.Field);
+    
+    console.log('📋 Existing table columns:', existingTableColumns);
 
     // Detect new columns from Excel
     const excelColumns = Object.keys(jsonData[0]);
-    const newColumns = excelColumns.filter(col => !allExistingColumns.includes(col));
+    console.log('📋 Excel columns:', excelColumns);
+    
+    const newColumns = excelColumns.filter(col => !existingTableColumns.includes(col));
 
     console.log('🆕 New columns detected:', newColumns);
 
@@ -253,45 +255,64 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     let insertedCount = 0;
     let errorCount = 0;
     
+    console.log('📝 Starting data insertion...');
+    
     for (const row of jsonData) {
-      const columns = Object.keys(row);
-      const values = Object.values(row);
-      
-      // Filter out undefined/null columns
-      const validColumns = columns.filter((col, idx) => values[idx] !== undefined && values[idx] !== null);
-      const validValues = validColumns.map(col => row[col]);
-      
-      const placeholders = validColumns.map(() => '?').join(',');
-      const columnNames = validColumns.map(c => mysql.escapeId(c)).join(',');
-      
       try {
+        // Get all column names from the row
+        const columns = Object.keys(row);
+        const values = Object.values(row);
+        
+        // Filter out undefined/null values
+        const validEntries = columns.map((col, idx) => ({
+          column: col,
+          value: values[idx]
+        })).filter(entry => entry.value !== undefined && entry.value !== null && entry.value !== '');
+        
+        if (validEntries.length === 0) {
+          console.log('⚠️ Skipping empty row');
+          continue;
+        }
+        
+        const validColumns = validEntries.map(e => e.column);
+        const validValues = validEntries.map(e => e.value);
+        
+        const placeholders = validColumns.map(() => '?').join(',');
+        const columnNames = validColumns.map(c => mysql.escapeId(c)).join(',');
+        
         // Try insert first
         const insertQuery = `INSERT INTO students (${columnNames}) VALUES (${placeholders})`;
+        
+        console.log(`Inserting row with student_id: ${row.student_id}`);
+        
         await pool.query(insertQuery, validValues);
         insertedCount++;
+        
       } catch (err) {
         // If duplicate key error, try update
         if (err.code === 'ER_DUP_ENTRY') {
           try {
-            const updateParts = validColumns
-              .filter(c => c !== 'student_id') // Don't update the key
-              .map(c => `${mysql.escapeId(c)} = ?`);
+            console.log(`Duplicate found for ${row.student_id}, updating...`);
             
-            if (updateParts.length > 0) {
-              const updateValues = validColumns
-                .filter(c => c !== 'student_id')
-                .map(c => row[c]);
+            const columns = Object.keys(row);
+            const updateColumns = columns.filter(c => c !== 'student_id' && row[c] !== undefined && row[c] !== null && row[c] !== '');
+            
+            if (updateColumns.length > 0) {
+              const updateParts = updateColumns.map(c => `${mysql.escapeId(c)} = ?`);
+              const updateValues = updateColumns.map(c => row[c]);
               
               const updateQuery = `UPDATE students SET ${updateParts.join(',')} WHERE student_id = ?`;
               await pool.query(updateQuery, [...updateValues, row.student_id]);
               insertedCount++;
+              console.log(`✅ Updated: ${row.student_id}`);
             }
           } catch (updateErr) {
-            console.error('Error updating row:', updateErr.message);
+            console.error(`❌ Error updating ${row.student_id}:`, updateErr.message);
             errorCount++;
           }
         } else {
-          console.error('Error inserting row:', err.message);
+          console.error(`❌ Error inserting row:`, err.message);
+          console.error('Row data:', row);
           errorCount++;
         }
       }
@@ -381,6 +402,23 @@ app.put('/api/work-status/:id', async (req, res) => {
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date() });
+});
+
+// Debug endpoint - check database structure
+app.get('/api/debug/structure', async (req, res) => {
+  try {
+    const [columns] = await pool.query('SHOW COLUMNS FROM students');
+    const [count] = await pool.query('SELECT COUNT(*) as total FROM students');
+    const [sample] = await pool.query('SELECT * FROM students LIMIT 5');
+    
+    res.json({
+      columns: columns.map(c => c.Field),
+      totalRecords: count[0].total,
+      sampleData: sample
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Start server
