@@ -185,14 +185,21 @@
                     
                     const result = await response.json();
                     if (response.ok) {
-                        showNotification(`✓ Success! ${result.recordsProcessed} records uploaded. ${result.newColumnsAdded.length} new columns added.`);
-                        fetchColumns();
-                        fetchData();
+                        const message = `✓ Success! ${result.recordsProcessed} records uploaded. ${result.recordsFailed || 0} failed. ${result.newColumnsAdded.length} new columns added.`;
+                        showNotification(message);
+                        
+                        // Refresh data
+                        await fetchColumns();
+                        await fetchData();
+                        
+                        // Debug: Check what's in database
+                        console.log('Upload result:', result);
                     } else {
                         showNotification('Error: ' + result.error);
                     }
                 } catch (error) {
                     showNotification('Upload error: ' + error.message);
+                    console.error('Upload error:', error);
                 } finally {
                     setLoading(false);
                     e.target.value = '';
