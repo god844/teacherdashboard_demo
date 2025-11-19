@@ -14,26 +14,56 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // MySQL Database Connection
-const dbConfig = {
-  host: process.env.MYSQLHOST || 'localhost',
-  port: process.env.MYSQLPORT || 3306,
-  user: process.env.MYSQLUSER || 'root',
-  password: process.env.MYSQLPASSWORD || '',
-  database: process.env.MYSQLDATABASE || 'uniform_db'
-};
+// Try using MYSQL_URL first if available
+let dbConfig;
+
+if (process.env.MYSQL_URL) {
+  // Parse MySQL URL format: mysql://user:pass@host:port/database
+  dbConfig = process.env.MYSQL_URL;
+  console.log('Using MYSQL_URL connection');
+} else {
+  dbConfig = {
+    host: process.env.MYSQLHOST,
+    port: parseInt(process.env.MYSQLPORT || '3306'),
+    user: process.env.MYSQLUSER,
+    password: process.env.MYSQLPASSWORD,
+    database: process.env.MYSQLDATABASE,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  };
+  console.log('Using individual MySQL variables');
+}
 
 let pool;
 
-// Initialize Database Connection
-async function initDB() {
+// Initialize Database Connection with retry
+async function initDB(retries = 5) {
   try {
+    console.log('Attempting to connect to MySQL...');
+    console.log('Host:', process.env.MYSQLHOST);
+    console.log('Port:', process.env.MYSQLPORT);
+    console.log('Database:', process.env.MYSQLDATABASE);
+    
     pool = mysql.createPool(dbConfig);
-    console.log('Database connected successfully');
+    
+    // Test connection
+    const connection = await pool.getConnection();
+    console.log('✅ Database connected successfully');
+    connection.release();
     
     // Create tables if they don't exist
     await createTables();
   } catch (error) {
-    console.error('Database connection failed:', error);
+    console.error('❌ Database connection failed:', error.message);
+    
+    if (retries > 0) {
+      console.log(`Retrying... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      return initDB(retries - 1);
+    }
+    
+    console.error('Failed to connect after multiple attempts');
     process.exit(1);
   }
 }
