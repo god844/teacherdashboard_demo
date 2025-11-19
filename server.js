@@ -14,16 +14,26 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // MySQL Database Connection
-const dbConfig = {
-  host: process.env.MYSQLHOST,
-  port: parseInt(process.env.MYSQLPORT || '3306'),
-  user: process.env.MYSQLUSER,
-  password: process.env.MYSQLPASSWORD,
-  database: process.env.MYSQLDATABASE,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-};
+// Try using MYSQL_URL first if available
+let dbConfig;
+
+if (process.env.MYSQL_URL) {
+  // Parse MySQL URL format: mysql://user:pass@host:port/database
+  dbConfig = process.env.MYSQL_URL;
+  console.log('Using MYSQL_URL connection');
+} else {
+  dbConfig = {
+    host: process.env.MYSQLHOST,
+    port: parseInt(process.env.MYSQLPORT || '3306'),
+    user: process.env.MYSQLUSER,
+    password: process.env.MYSQLPASSWORD,
+    database: process.env.MYSQLDATABASE,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  };
+  console.log('Using individual MySQL variables');
+}
 
 let pool;
 
@@ -130,7 +140,7 @@ app.post('/api/columns', async (req, res) => {
   const { columnName } = req.body;
   
   try {
-    // Check if column already exists
+    // Check if column already exists in table_columns
     const [existing] = await pool.query(
       'SELECT * FROM table_columns WHERE column_name = ?',
       [columnName]
@@ -138,6 +148,16 @@ app.post('/api/columns', async (req, res) => {
 
     if (existing.length > 0) {
       return res.status(400).json({ error: 'Column already exists' });
+    }
+
+    // Check if column exists in students table
+    const [columns] = await pool.query(
+      `SHOW COLUMNS FROM students LIKE ?`,
+      [columnName]
+    );
+
+    if (columns.length > 0) {
+      return res.status(400).json({ error: 'Column already exists in table' });
     }
 
     // Add to table_columns
@@ -204,8 +224,22 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
     // Add new columns to database
     for (const col of newColumns) {
-      await pool.query('INSERT IGNORE INTO table_columns (column_name) VALUES (?)', [col]);
-      await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS ${mysql.escapeId(col)} VARCHAR(255)`);
+      try {
+        await pool.query('INSERT IGNORE INTO table_columns (column_name) VALUES (?)', [col]);
+        
+        // Check if column already exists
+        const [columns] = await pool.query(
+          `SHOW COLUMNS FROM students LIKE ?`,
+          [col]
+        );
+        
+        // Add column only if it doesn't exist
+        if (columns.length === 0) {
+          await pool.query(`ALTER TABLE students ADD COLUMN ${mysql.escapeId(col)} VARCHAR(255)`);
+        }
+      } catch (err) {
+        console.error(`Error adding column ${col}:`, err.message);
+      }
     }
 
     // Insert data
