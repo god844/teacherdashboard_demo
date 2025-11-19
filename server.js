@@ -202,11 +202,15 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    console.log('📁 File received:', req.file.originalname);
+
     // Parse Excel file
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+    console.log('📊 Parsed rows:', jsonData.length);
 
     if (jsonData.length === 0) {
       return res.status(400).json({ error: 'Excel file is empty' });
@@ -222,6 +226,8 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const excelColumns = Object.keys(jsonData[0]);
     const newColumns = excelColumns.filter(col => !allExistingColumns.includes(col));
 
+    console.log('🆕 New columns detected:', newColumns);
+
     // Add new columns to database
     for (const col of newColumns) {
       try {
@@ -236,39 +242,75 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
         // Add column only if it doesn't exist
         if (columns.length === 0) {
           await pool.query(`ALTER TABLE students ADD COLUMN ${mysql.escapeId(col)} VARCHAR(255)`);
+          console.log('✅ Added column:', col);
         }
       } catch (err) {
-        console.error(`Error adding column ${col}:`, err.message);
+        console.error(`❌ Error adding column ${col}:`, err.message);
       }
     }
 
     // Insert data
     let insertedCount = 0;
+    let errorCount = 0;
+    
     for (const row of jsonData) {
       const columns = Object.keys(row);
       const values = Object.values(row);
       
-      const placeholders = columns.map(() => '?').join(',');
-      const columnNames = columns.map(c => mysql.escapeId(c)).join(',');
+      // Filter out undefined/null columns
+      const validColumns = columns.filter((col, idx) => values[idx] !== undefined && values[idx] !== null);
+      const validValues = validColumns.map(col => row[col]);
+      
+      const placeholders = validColumns.map(() => '?').join(',');
+      const columnNames = validColumns.map(c => mysql.escapeId(c)).join(',');
       
       try {
-        await pool.query(
-          `INSERT INTO students (${columnNames}) VALUES (${placeholders})
-           ON DUPLICATE KEY UPDATE ${columns.map(c => `${mysql.escapeId(c)} = VALUES(${mysql.escapeId(c)})`).join(',')}`,
-          values
-        );
+        // Try insert first
+        const insertQuery = `INSERT INTO students (${columnNames}) VALUES (${placeholders})`;
+        await pool.query(insertQuery, validValues);
         insertedCount++;
       } catch (err) {
-        console.error('Error inserting row:', err);
+        // If duplicate key error, try update
+        if (err.code === 'ER_DUP_ENTRY') {
+          try {
+            const updateParts = validColumns
+              .filter(c => c !== 'student_id') // Don't update the key
+              .map(c => `${mysql.escapeId(c)} = ?`);
+            
+            if (updateParts.length > 0) {
+              const updateValues = validColumns
+                .filter(c => c !== 'student_id')
+                .map(c => row[c]);
+              
+              const updateQuery = `UPDATE students SET ${updateParts.join(',')} WHERE student_id = ?`;
+              await pool.query(updateQuery, [...updateValues, row.student_id]);
+              insertedCount++;
+            }
+          } catch (updateErr) {
+            console.error('Error updating row:', updateErr.message);
+            errorCount++;
+          }
+        } else {
+          console.error('Error inserting row:', err.message);
+          errorCount++;
+        }
       }
     }
 
     res.json({ 
       message: 'File uploaded successfully',
       recordsProcessed: insertedCount,
+      recordsFailed: errorCount,
       newColumnsAdded: newColumns
     });
+    
+    console.log('✅ Upload complete:', {
+      processed: insertedCount,
+      failed: errorCount,
+      newColumns: newColumns.length
+    });
   } catch (error) {
+    console.error('❌ Upload error:', error);
     res.status(500).json({ error: error.message });
   }
 });
