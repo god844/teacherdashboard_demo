@@ -14,26 +14,16 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // MySQL Database Connection
-// Try using MYSQL_URL first if available
-let dbConfig;
-
-if (process.env.MYSQL_URL) {
-  // Parse MySQL URL format: mysql://user:pass@host:port/database
-  dbConfig = process.env.MYSQL_URL;
-  console.log('Using MYSQL_URL connection');
-} else {
-  dbConfig = {
-    host: process.env.MYSQLHOST,
-    port: parseInt(process.env.MYSQLPORT || '3306'),
-    user: process.env.MYSQLUSER,
-    password: process.env.MYSQLPASSWORD,
-    database: process.env.MYSQLDATABASE,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-  };
-  console.log('Using individual MySQL variables');
-}
+const dbConfig = {
+  host: process.env.MYSQLHOST,
+  port: parseInt(process.env.MYSQLPORT || '3306'),
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+};
 
 let pool;
 
