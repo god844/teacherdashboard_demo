@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Uniform Management Dashboard</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+            animation: fadeIn 0.5s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // API base URL - change this to your Railway URL after deployment
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:3000' 
+            : '';
+
+        const Dashboard = () => {
+            const [activeTab, setActiveTab] = useState('upload');
+            const [columns, setColumns] = useState([]);
+            const [newColumn, setNewColumn] = useState('');
+            const [data, setData] = useState([]);
+            const [filteredData, setFilteredData] = useState([]);
+            const [filters, setFilters] = useState({});
+            const [workStatus, setWorkStatus] = useState([]);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            // Fetch columns
+            useEffect(() => {
+                fetchColumns();
+                fetchData();
+                fetchWorkStatus();
+            }, []);
+
+            const fetchColumns = async () => {
+                try {
+                    const response = await fetch(`${API_URL}/api/columns`);
+                    const result = await response.json();
+                    setColumns(result.columns);
+                } catch (error) {
+                    console.error('Error fetching columns:', error);
+                }
+            };
+
+            const fetchData = async () => {
+                try {
+                    const response = await fetch(`${API_URL}/api/students`);
+                    const result = await response.json();
+                    setData(result.data);
+                    setFilteredData(result.data);
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                }
+            };
+
+            const fetchWorkStatus = async () => {
+                try {
+                    const response = await fetch(`${API_URL}/api/work-status`);
+                    const result = await response.json();
+                    setWorkStatus(result.workStatus);
+                } catch (error) {
+                    console.error('Error fetching work status:', error);
+                }
+            };
+
+            const addColumn = async () => {
+                if (!newColumn || columns.includes(newColumn)) return;
+                
+                try {
+                    const response = await fetch(`${API_URL}/api/columns`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ columnName: newColumn })
+                    });
+                    
+                    if (response.ok) {
+                        setColumns([...columns, newColumn]);
+                        setNewColumn('');
+                        alert('Column added successfully!');
+                    }
+                } catch (error) {
+                    alert('Error adding column: ' + error.message);
+                }
+            };
+
+            const removeColumn = async (col) => {
+                if (['student_id', 'name', 'class', 'section'].includes(col)) return;
+                
+                try {
+                    const response = await fetch(`${API_URL}/api/columns/${col}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        setColumns(columns.filter(c => c !== col));
+                        alert('Column removed successfully!');
+                    }
+                } catch (error) {
+                    alert('Error removing column: ' + error.message);
+                }
+            };
+
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                setLoading(true);
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch(`${API_URL}/api/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    if (response.ok) {
+                        alert(`Success! ${result.recordsProcessed} records uploaded. ${result.newColumnsAdded.length} new columns added.`);
+                        fetchColumns();
+                        fetchData();
+                    } else {
+                        alert('Error: ' + result.error);
+                    }
+                } catch (error) {
+                    alert('Upload error: ' + error.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const applyFilters = () => {
+                let filtered = [...data];
+                Object.keys(filters).forEach(key => {
+                    if (filters[key]) {
+                        filtered = filtered.filter(item => 
+                            item[key]?.toString().toLowerCase().includes(filters[key].toLowerCase())
+                        );
+                    }
+                });
+                if (searchTerm) {
+                    filtered = filtered.filter(item =>
+                        Object.values(item).some(val =>
+                            val?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+                        )
+                    );
+                }
+                setFilteredData(filtered);
+            };
+
+            useEffect(() => {
+                applyFilters();
+            }, [filters, searchTerm, data]);
+
+            const downloadExcel = () => {
+                const headers = Object.keys(filteredData[0] || {});
+                const csv = [
+                    headers.join(','),
+                    ...filteredData.map(row => headers.map(h => row[h]).join(','))
+                ].join('\\n');
+                
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `uniform_data_${new Date().toISOString()}.csv`;
+                a.click();
+            };
+
+            const getUniqueValues = (key) => {
+                return [...new Set(data.map(item => item[key]))].filter(Boolean);
+            };
+
+            const getTimeRemaining = (deadline) => {
+                const now = new Date();
+                const end = new Date(deadline);
+                const diff = end - now;
+                const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                return days > 0 ? `${days} days left` : 'Overdue';
+            };
+
+            // SVG Icons as components
+            const UploadIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>;
+            const DatabaseIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>;
+            const TableIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>;
+            const CheckIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 p-4">
+                    <div className="max-w-7xl mx-auto">
+                        {/* Header */}
+                        <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-6 mb-6 border border-white/20 shadow-2xl">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h1 className="text-4xl font-bold text-white mb-2">School Uniform Management</h1>
+                                    <p className="text-blue-200">Professional Dashboard for Tailoring Data</p>
+                                </div>
+                                <div className="flex items-center gap-3 backdrop-blur-lg bg-white/10 px-4 py-2 rounded-full border border-white/20">
+                                    <span className="text-white font-semibold">{new Date().toLocaleDateString()}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Navigation */}
+                        <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-2 mb-6 border border-white/20 shadow-2xl flex gap-2">
+                            {[
+                                { id: 'upload', icon: UploadIcon, label: 'Upload Data' },
+                                { id: 'database', icon: DatabaseIcon, label: 'Manage Columns' },
+                                { id: 'view', icon: TableIcon, label: 'View Data' },
+                                { id: 'work', icon: CheckIcon, label: 'Work Status' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ${
+                                        activeTab === tab.id
+                                            ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg scale-105'
+                                            : 'text-white hover:bg-white/10'
+                                    }`}
+                                >
+                                    <tab.icon />
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Content */}
+                        <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-8 border border-white/20 shadow-2xl min-h-[500px]">
+                            {activeTab === 'upload' && (
+                                <div className="space-y-6">
+                                    <h2 className="text-3xl font-bold text-white mb-6">Upload Excel File</h2>
+                                    <div className="border-4 border-dashed border-white/30 rounded-3xl p-12 text-center hover:border-blue-400 transition-all">
+                                        <input
+                                            type="file"
+                                            accept=".xlsx,.xls,.csv"
+                                            onChange={handleFileUpload}
+                                            className="hidden"
+                                            id="file-upload"
+                                            disabled={loading}
+                                        />
+                                        <label htmlFor="file-upload" className="cursor-pointer">
+                                            <div className="text-blue-300 mb-4 text-6xl">📊</div>
+                                            <p className="text-white text-xl font-semibold mb-2">
+                                                {loading ? 'Uploading...' : 'Click to upload Excel file'}
+                                            </p>
+                                            <p className="text-blue-200">Supports .xlsx, .xls, .csv formats</p>
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'database' && (
+                                <div className="space-y-6">
+                                    <h2 className="text-3xl font-bold text-white mb-6">Manage Database Columns</h2>
+                                    <div className="flex gap-3 mb-6">
+                                        <input
+                                            type="text"
+                                            value={newColumn}
+                                            onChange={(e) => setNewColumn(e.target.value)}
+                                            placeholder="Enter new column name"
+                                            className="flex-1 px-4 py-3 rounded-xl backdrop-blur-lg bg-white/10 border border-white/20 text-white placeholder-blue-200"
+                                        />
+                                        <button onClick={addColumn} className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold">
+                                            Add Column
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                        {columns.map(col => (
+                                            <div key={col} className="backdrop-blur-lg bg-white/10 rounded-xl p-4 border border-white/20 flex justify-between items-center">
+                                                <span className="text-white font-semibold">{col}</span>
+                                                {!['student_id', 'name', 'class', 'section'].includes(col) && (
+                                                    <button onClick={() => removeColumn(col)} className="text-red-300 hover:text-red-400">✕</button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'view' && (
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="text-3xl font-bold text-white">View Data ({filteredData.length} records)</h2>
+                                        <button onClick={downloadExcel} className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold">
+                                            Download Excel
+                                        </button>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        placeholder="Search..."
+                                        className="w-full px-4 py-3 rounded-xl backdrop-blur-lg bg-white/10 border border-white/20 text-white placeholder-blue-200"
+                                    />
+                                    <div className="backdrop-blur-lg bg-white/5 rounded-2xl overflow-x-auto">
+                                        <table className="w-full">
+                                            <thead className="bg-white/10">
+                                                <tr>
+                                                    {Object.keys(filteredData[0] || {}).map(key => (
+                                                        <th key={key} className="px-6 py-4 text-left text-white font-semibold">{key}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filteredData.map((row, idx) => (
+                                                    <tr key={idx} className="border-t border-white/10 hover:bg-white/5">
+                                                        {Object.values(row).map((val, i) => (
+                                                            <td key={i} className="px-6 py-4 text-blue-100">{val}</td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'work' && (
+                                <div className="space-y-6">
+                                    <h2 className="text-3xl font-bold text-white mb-6">Work Status Tracker</h2>
+                                    {workStatus.map(work => (
+                                        <div key={work.id} className="backdrop-blur-lg bg-white/10 rounded-2xl p-6 border border-white/20">
+                                            <div className="flex justify-between items-center mb-4">
+                                                <h3 className="text-xl font-bold text-white">{work.task}</h3>
+                                                <span className={`px-4 py-2 rounded-full font-semibold ${
+                                                    work.status === 'completed' ? 'bg-green-500/30 text-green-200' :
+                                                    work.status === 'started' ? 'bg-blue-500/30 text-blue-200' :
+                                                    'bg-yellow-500/30 text-yellow-200'
+                                                }`}>
+                                                    {work.status.toUpperCase()}
+                                                </span>
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-4 text-sm">
+                                                <div>
+                                                    <p className="text-blue-300">Start Date</p>
+                                                    <p className="text-white font-semibold">{work.start_date || 'Not started'}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-blue-300">Deadline</p>
+                                                    <p className="text-white font-semibold">{work.deadline}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-blue-300">Time Remaining</p>
+                                                    <p className="text-yellow-300 font-semibold">
+                                                        {work.status === 'completed' ? 'Completed' : getTimeRemaining(work.deadline)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<Dashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>
