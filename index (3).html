@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskMaster Pro - Professional Todo Dashboard</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-slideIn {
+            animation: slideIn 0.3s ease-out;
+        }
+        .animate-fadeIn {
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // API Base URL - automatically detects if local or production
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:3000/api' 
+            : '/api';
+
+        // Lucide Icons as SVG components
+        const Icon = ({ name, className = "w-5 h-5", ...props }) => {
+            const icons = {
+                CheckCircle2: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                Circle: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><circle cx="12" cy="12" r="10" strokeWidth={2} /></svg>,
+                Plus: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
+                Search: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>,
+                Trash2: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
+                Edit2: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
+                Clock: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                Moon: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>,
+                Sun: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+                BarChart3: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>,
+                Archive: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>,
+                AlertCircle: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                ChevronDown: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>,
+                GripVertical: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><circle cx="9" cy="5" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="19" r="1" fill="currentColor"/><circle cx="15" cy="5" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="19" r="1" fill="currentColor"/></svg>,
+                Loader: <svg className={`${className} animate-spin`} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+            };
+            return icons[name] || null;
+        };
+
+        const TodoDashboard = () => {
+            const [tasks, setTasks] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [filter, setFilter] = useState('all');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [darkMode, setDarkMode] = useState(false);
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [editingTask, setEditingTask] = useState(null);
+            const [sortBy, setSortBy] = useState('created');
+            const [notification, setNotification] = useState(null);
+            const [stats, setStats] = useState({ total: 0, completed: 0, active: 0, overdue: 0 });
+            const [showStats, setShowStats] = useState(true);
+
+            const [formData, setFormData] = useState({
+                title: '',
+                description: '',
+                priority: 'medium',
+                due_date: '',
+                tags: [],
+                subtasks: []
+            });
+
+            const [newTag, setNewTag] = useState('');
+            const [newSubtask, setNewSubtask] = useState('');
+
+            // Fetch tasks from backend
+            useEffect(() => {
+                fetchTasks();
+                fetchStats();
+                const darkModePreference = localStorage.getItem('darkMode');
+                if (darkModePreference) {
+                    setDarkMode(JSON.parse(darkModePreference));
+                }
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('darkMode', JSON.stringify(darkMode));
+            }, [darkMode]);
+
+            const fetchTasks = async () => {
+                try {
+                    setLoading(true);
+                    const response = await fetch(`${API_BASE}/tasks`);
+                    if (!response.ok) throw new Error('Failed to fetch tasks');
+                    const data = await response.json();
+                    setTasks(data);
+                } catch (error) {
+                    showNotification('❌ Error loading tasks: ' + error.message, 'error');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const fetchStats = async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/stats`);
+                    if (!response.ok) throw new Error('Failed to fetch stats');
+                    const data = await response.json();
+                    setStats(data);
+                } catch (error) {
+                    console.error('Error fetching stats:', error);
+                }
+            };
+
+            const showNotification = (message, type = 'success') => {
+                setNotification({ message, type });
+                setTimeout(() => setNotification(null), 4000);
+            };
+
+            const addTask = async () => {
+                if (!formData.title.trim()) return;
+
+                try {
+                    const response = await fetch(`${API_BASE}/tasks`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+
+                    if (!response.ok) throw new Error('Failed to create task');
+                    
+                    await fetchTasks();
+                    await fetchStats();
+                    resetForm();
+                    showNotification('Task added successfully! 🎉');
+                } catch (error) {
+                    showNotification('❌ Error creating task: ' + error.message, 'error');
+                }
+            };
+
+            const updateTask = async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/tasks/${editingTask.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ...formData,
+                            completed: editingTask.completed
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('Failed to update task');
+                    
+                    await fetchTasks();
+                    await fetchStats();
+                    resetForm();
+                    showNotification('Task updated! ✨');
+                } catch (error) {
+                    showNotification('❌ Error updating task: ' + error.message, 'error');
+                }
+            };
+
+            const deleteTask = async (id) => {
+                if (!confirm('Are you sure you want to delete this task?')) return;
+
+                try {
+                    const response = await fetch(`${API_BASE}/tasks/${id}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (!response.ok) throw new Error('Failed to delete task');
+                    
+                    await fetchTasks();
+                    await fetchStats();
+                    showNotification('Task deleted successfully! 🗑️');
+                } catch (error) {
+                    showNotification('❌ Error deleting task: ' + error.message, 'error');
+                }
+            };
+
+            const toggleComplete = async (id) => {
+                try {
+                    const response = await fetch(`${API_BASE}/tasks/${id}/toggle`, {
+                        method: 'PATCH'
+                    });
+
+                    if (!response.ok) throw new Error('Failed to toggle task');
+                    
+                    await fetchTasks();
+                    await fetchStats();
+                } catch (error) {
+                    showNotification('❌ Error toggling task: ' + error.message, 'error');
+                }
+            };
+
+            const toggleSubtask = async (subtaskId) => {
+                try {
+                    const response = await fetch(`${API_BASE}/subtasks/${subtaskId}/toggle`, {
+                        method: 'PATCH'
+                    });
+
+                    if (!response.ok) throw new Error('Failed to toggle subtask');
+                    
+                    await fetchTasks();
+                } catch (error) {
+                    showNotification('❌ Error toggling subtask: ' + error.message, 'error');
+                }
+            };
+
+            const editTask = (task) => {
+                setEditingTask(task);
+                setFormData({
+                    title: task.title,
+                    description: task.description || '',
+                    priority: task.priority,
+                    due_date: task.due_date || '',
+                    tags: task.tags || [],
+                    subtasks: task.subtasks ? task.subtasks.map(st => st.text) : []
+                });
+                setShowAddModal(true);
+            };
+
+            const resetForm = () => {
+                setFormData({ title: '', description: '', priority: 'medium', due_date: '', tags: [], subtasks: [] });
+                setEditingTask(null);
+                setShowAddModal(false);
+                setNewTag('');
+                setNewSubtask('');
+            };
+
+            const addTag = () => {
+                if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+                    setFormData({ ...formData, tags: [...formData.tags, newTag.trim()] });
+                    setNewTag('');
+                }
+            };
+
+            const removeTag = (tag) => {
+                setFormData({ ...formData, tags: formData.tags.filter(t => t !== tag) });
+            };
+
+            const addSubtask = () => {
+                if (newSubtask.trim()) {
+                    setFormData({ ...formData, subtasks: [...formData.subtasks, newSubtask.trim()] });
+                    setNewSubtask('');
+                }
+            };
+
+            const removeSubtask = (index) => {
+                setFormData({ ...formData, subtasks: formData.subtasks.filter((_, i) => i !== index) });
+            };
+
+            const getFilteredAndSortedTasks = () => {
+                let filtered = tasks.filter(task => {
+                    const matchesFilter = 
+                        filter === 'all' ? true :
+                        filter === 'active' ? !task.completed :
+                        filter === 'completed' ? task.completed :
+                        filter.startsWith('priority-') ? task.priority === filter.replace('priority-', '') :
+                        false;
+
+                    const matchesSearch = 
+                        task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (task.description && task.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (task.tags && task.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())));
+
+                    return matchesFilter && matchesSearch;
+                });
+
+                return filtered.sort((a, b) => {
+                    if (sortBy === 'created') return new Date(b.created_at) - new Date(a.created_at);
+                    if (sortBy === 'dueDate') {
+                        if (!a.due_date) return 1;
+                        if (!b.due_date) return -1;
+                        return new Date(a.due_date) - new Date(b.due_date);
+                    }
+                    if (sortBy === 'priority') {
+                        const priority = { high: 3, medium: 2, low: 1 };
+                        return priority[b.priority] - priority[a.priority];
+                    }
+                    return 0;
+                });
+            };
+
+            const priorityColors = {
+                high: 'from-red-500 to-pink-500',
+                medium: 'from-yellow-500 to-orange-500',
+                low: 'from-green-500 to-emerald-500'
+            };
+
+            const priorityBorders = {
+                high: 'border-red-400',
+                medium: 'border-yellow-400',
+                low: 'border-green-400'
+            };
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+                        <div className="text-center">
+                            <Icon name="Loader" className="w-16 h-16 text-indigo-600 mx-auto mb-4" />
+                            <p className="text-xl font-semibold text-gray-700">Loading TaskMaster Pro...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className={`min-h-screen transition-colors duration-500 ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-black' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'}`}>
+                    {/* Notification Toast */}
+                    {notification && (
+                        <div className={`fixed top-4 right-4 z-50 ${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-2xl p-4 flex items-center gap-3 animate-slideIn border-l-4 ${notification.type === 'error' ? 'border-red-500' : 'border-green-500'}`}>
+                            <Icon name="AlertCircle" className="w-5 h-5" />
+                            <span className={darkMode ? 'text-white' : 'text-gray-800'}>{notification.message}</span>
+                        </div>
+                    )}
+
+                    {/* Header */}
+                    <div className={`${darkMode ? 'bg-gray-800/50' : 'bg-white/80'} backdrop-blur-xl border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} sticky top-0 z-40 shadow-lg`}>
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-3 rounded-2xl shadow-lg transform hover:scale-105 transition-transform">
+                                        <Icon name="CheckCircle2" className="w-8 h-8 text-white" />
+                                    </div>
+                                    <div>
+                                        <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                                            TaskMaster Pro
+                                        </h1>
+                                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>MySQL Backend • Railway Deployed</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() => setShowStats(!showStats)}
+                                        className={`p-3 rounded-xl transition-all hover:scale-105 ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                    >
+                                        <Icon name="BarChart3" className="w-5 h-5" />
+                                    </button>
+                                    <button
+                                        onClick={() => setDarkMode(!darkMode)}
+                                        className={`p-3 rounded-xl transition-all hover:scale-105 ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                    >
+                                        <Icon name={darkMode ? "Sun" : "Moon"} className={`w-5 h-5 ${darkMode ? 'text-yellow-400' : 'text-indigo-600'}`} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        {/* Stats Dashboard */}
+                        {showStats && (
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 animate-fadeIn">
+                                {[
+                                    { label: 'Total Tasks', value: stats.total, icon: 'CheckCircle2', color: 'from-blue-500 to-cyan-500' },
+                                    { label: 'Active', value: stats.active, icon: 'Circle', color: 'from-purple-500 to-pink-500' },
+                                    { label: 'Completed', value: stats.completed, icon: 'CheckCircle2', color: 'from-green-500 to-emerald-500' },
+                                    { label: 'Overdue', value: stats.overdue, icon: 'AlertCircle', color: 'from-red-500 to-orange-500' }
+                                ].map((stat, idx) => (
+                                    <div key={idx} className={`${darkMode ? 'bg-gray-800/50' : 'bg-white/80'} backdrop-blur-xl rounded-2xl p-6 border ${darkMode ? 'border-gray-700' : 'border-gray-200'} shadow-xl hover:shadow-2xl transition-all hover:scale-105`}>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>{stat.label}</p>
+                                                <p className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{stat.value}</p>
+                                            </div>
+                                            <div className={`p-4 rounded-2xl bg-gradient-to-br ${stat.color}`}>
+                                                <Icon name={stat.icon} className="w-6 h-6 text-white" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Controls */}
+                        <div className={`${darkMode ? 'bg-gray-800/50' : 'bg-white/80'} backdrop-blur-xl rounded-2xl p-6 mb-6 border ${darkMode ? 'border-gray-700' : 'border-gray-200'} shadow-xl`}>
+                            <div className="flex flex-col md:flex-row gap-4">
+                                {/* Search */}
+                                <div className="flex-1 relative">
+                                    <Icon name="Search" className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                                    <input
+                                        type="text"
+                                        placeholder="Search tasks, tags, descriptions..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className={`w-full pl-12 pr-4 py-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-800'} focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all`}
+                                    />
+                                </div>
+
+                                {/* Filter */}
+                                <select
+                                    value={filter}
+                                    onChange={(e) => setFilter(e.target.value)}
+                                    className={`px-4 py-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-800'} focus:ring-2 focus:ring-indigo-500`}
+                                >
+                                    <option value="all">All Tasks</option>
+                                    <option value="active">Active</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="priority-high">High Priority</option>
+                                    <option value="priority-medium">Medium Priority</option>
+                                    <option value="priority-low">Low Priority</option>
+                                </select>
+
+                                {/* Sort */}
+                                <select
+                                    value={sortBy}
+                                    onChange={(e) => setSortBy(e.target.value)}
+                                    className={`px-4 py-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-800'} focus:ring-2 focus:ring-indigo-500`}
+                                >
+                                    <option value="created">Recently Added</option>
+                                    <option value="dueDate">Due Date</option>
+                                    <option value="priority">Priority</option>
+                                </select>
+
+                                {/* Add Button */}
+                                <button
+                                    onClick={() => setShowAddModal(true)}
+                                    className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-3 rounded-xl hover:shadow-lg hover:scale-105 transition-all flex items-center gap-2 font-semibold"
+                                >
+                                    <Icon name="Plus" className="w-5 h-5" />
+                                    Add Task
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Tasks List */}
+                        <div className="space-y-4">
+                            {getFilteredAndSortedTasks().length === 0 ? (
+                                <div className={`${darkMode ? 'bg-gray-800/50' : 'bg-white/80'} backdrop-blur-xl rounded-2xl p-12 text-center border ${darkMode ? 'border-gray-700' : 'border-gray-200'} shadow-xl`}>
+                                    <Icon name="Archive" className={`w-16 h-16 mx-auto mb-4 ${darkMode ? 'text-gray-600' : 'text-gray-400'}`} />
+                                    <h3 className={`text-xl font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>No tasks found</h3>
+                                    <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Create a new task to get started!</p>
+                                </div>
+                            ) : (
+                                getFilteredAndSortedTasks().map((task) => (
+                                    <div
+                                        key={task.id}
+                                        className={`${darkMode ? 'bg-gray-800/50' : 'bg-white/80'} backdrop-blur-xl rounded-2xl p-6 border-l-4 ${priorityBorders[task.priority]} border ${darkMode ? 'border-gray-700' : 'border-gray-200'} shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] ${task.completed ? 'opacity-60' : ''} animate-slideIn`}
+                                    >
+                                        <div className="flex items-start gap-4">
+                                            <button
+                                                onClick={() => toggleComplete(task.id)}
+                                                className="flex-shrink-0 transform hover:scale-110 transition-transform mt-1"
+                                            >
+                                                <Icon 
+                                                    name={task.completed ? "CheckCircle2" : "Circle"}
+                                                    className={`w-6 h-6 ${task.completed ? 'text-green-500' : darkMode ? 'text-gray-600' : 'text-gray-400'}`}
+                                                />
+                                            </button>
+                                            <div className="flex-1">
+                                                <h3 className={`text-lg font-semibold ${task.completed ? 'line-through' : ''} ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                                                    {task.title}
+                                                </h3>
+                                                {task.description && (
+                                                    <p className={`text-sm mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'} ${task.completed ? 'line-through' : ''}`}>
+                                                        {task.description}
+                                                    </p>
+                                                )}
+                                                
+                                                {/* Tags */}
+                                                {task.tags && task.tags.length > 0 && (
+                                                    <div className="flex flex-wrap gap-2 mt-3">
+                                                        {task.tags.map((tag, idx) => (
+                                                            <span key={idx} className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-100 text-indigo-700'}`}>
+                                                                #{tag}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Subtasks */}
+                                                {task.subtasks && task.subtasks.length > 0 && (
+                                                    <div className="mt-3 space-y-2">
+                                                        {task.subtasks.map((subtask) => (
+                                                            <div key={subtask.id} className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={() => toggleSubtask(subtask.id)}
+                                                                    className="flex-shrink-0"
+                                                                >
+                                                                    <Icon 
+                                                                        name={subtask.completed ? "CheckCircle2" : "Circle"}
+                                                                        className={`w-4 h-4 ${subtask.completed ? 'text-green-500' : darkMode ? 'text-gray-600' : 'text-gray-400'}`}
+                                                                    />
+                                                                </button>
+                                                                <span className={`text-sm ${subtask.completed ? 'line-through' : ''} ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                                    {subtask.text}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Due Date & Priority */}
+                                                <div className="flex items-center gap-4 mt-3">
+                                                    {task.due_date && (
+                                                        <div className={`flex items-center gap-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                                            <Icon name="Clock" className="w-4 h-4" />
+                                                            {new Date(task.due_date).toLocaleDateString()}
+                                                        </div>
+                                                    )}
+                                                    <div className={`px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r ${priorityColors[task.priority]} text-white`}>
+                                                        {task.priority.toUpperCase()}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => editTask(task)}
+                                                    className={`p-2 rounded-lg transition-all hover:scale-110 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                                                >
+                                                    <Icon name="Edit2" className="w-5 h-5 text-blue-500" />
+                                                </button>
+                                                <button
+                                                    onClick={() => deleteTask(task.id)}
+                                                    className={`p-2 rounded-lg transition-all hover:scale-110 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                                                >
+                                                    <Icon name="Trash2" className="w-5 h-5 text-red-500" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Add/Edit Modal */}
+                    {showAddModal && (
+                        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+                            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto`}>
+                                <div className={`p-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                                    <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                                        {editingTask ? 'Edit Task' : 'Create New Task'}
+                                    </h2>
+                                </div>
+
+                                <div className="p-6 space-y-4">
+                                    <div>
+                                        <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Title *</label>
+                                        <input
+                                            type="text"
+                                            value={formData.title}
+                                            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                            placeholder="Enter task title"
+                                            className={`w-full px-4 py-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'} focus:ring-2 focus:ring-indigo-500`}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Description</label>
+                                        <textarea
+                                            value={formData.description}
+                                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                            placeholder="Add task description"
+                                            rows="3"
+                                            className={`w-full px-4 py-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'} focus:ring-2 focus:ring-indigo-500`}
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Priority</label>
+                                            <select
+                                                value={formData.priority}
+                                                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                                                className={`w-full px-4 py-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'} focus:ring-2 focus:ring-indigo-500`}
+                                            >
+                                                <option value="low">Low</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="high">High</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Due Date</label>
+                                            <input
+                                                type="date"
+                                                value={formData.due_date}
+                                                onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                                                className={`w-full px-4 py-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'} focus:ring-2 focus:ring-indigo-500`}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Tags */}
+                                    <div>
+                                        <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Tags</label>
+                                        <div className="flex gap-2 mb-2">
+                                            <input
+                                                type="text"
+                                                value={newTag}
+                                                onChange={(e) => setNewTag(e.target.value)}
+                                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                                                placeholder="Add a tag"
+                                                className={`flex-1 px-4 py-2 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'} focus:ring-2 focus:ring-indigo-500`}
+                                            />
+                                            <button
+                                                onClick={addTag}
+                                                className="px-4 py-2 bg-indigo-500 text-white rounded-xl hover:bg-indigo-600"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {formData.tags.map((tag, idx) => (
+                                                <span key={idx} className={`px-3 py-1 rounded-full text-sm ${darkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-100 text-indigo-700'} flex items-center gap-2`}>
+                                                    #{tag}
+                                                    <button onClick={() => removeTag(tag)} className="hover:text-red-500 text-lg leading-none">×</button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Subtasks */}
+                                    <div>
+                                        <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Subtasks</label>
+                                        <div className="flex gap-2 mb-2">
+                                            <input
+                                                type="text"
+                                                value={newSubtask}
+                                                onChange={(e) => setNewSubtask(e.target.value)}
+                                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSubtask())}
+                                                placeholder="Add a subtask"
+                                                className={`flex-1 px-4 py-2 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'} focus:ring-2 focus:ring-indigo-500`}
+                                            />
+                                            <button
+                                                onClick={addSubtask}
+                                                className="px-4 py-2 bg-indigo-500 text-white rounded-xl hover:bg-indigo-600"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {formData.subtasks.map((subtask, idx) => (
+                                                <div key={idx} className={`px-3 py-2 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'} flex items-center justify-between`}>
+                                                    <span className={darkMode ? 'text-white' : 'text-gray-800'}>{subtask}</span>
+                                                    <button onClick={() => removeSubtask(idx)} className="text-red-500 hover:text-red-600">
+                                                        <Icon name="Trash2" className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className={`p-6 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-end gap-3`}>
+                                    <button
+                                        onClick={resetForm}
+                                        className={`px-6 py-3 rounded-xl font-semibold ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={editingTask ? updateTask : addTask}
+                                        className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl hover:shadow-lg font-semibold"
+                                    >
+                                        {editingTask ? 'Update Task' : 'Create Task'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        ReactDOM.render(<TodoDashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>
